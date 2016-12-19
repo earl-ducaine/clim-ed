@@ -1,0 +1,107 @@
+;;; **********************************************************************
+;;; Copyright (c) 92, 93 Hallvard Traetteberg. All rights reserved.
+;;; Use and copying of this software and preparation of derivative works
+;;; based upon this software are permitted and may be copied as long as 
+;;; no fees or compensation are charged for use, copying, or accessing
+;;; this software and all copies of this software include this copyright
+;;; notice.  Suggestions, comments and bug reports are welcome.  Please 
+;;; address email to: Hallvard.Tretteberg@si.sintef.no
+;;; **********************************************************************
+
+-----------------------
+
+This window editor is made as part of the DRIVE II project, V2039,
+KITS - Knowledge based and Intelligent Traffic control System.
+The implementation was done by the Norwegian partner, SINTEF SI,
+which was funded by the Norwegian road authorities and the
+Norwegian Research Council. The port from MCL to Allegro was
+done by the Italian partner, Automa.
+
+-----------------------
+
+The editor is inspired by emacs, of course, but has only a small set
+of basic commands, although it has fairly general machinery that
+makes it quite extendible. The code is undocumented, but quite tidy
+and shouldn't be to difficult to understand for those who want to extend
+it.
+
+The CLIM specific code should perhaps be looked at by a CLIM expert,
+in addition, the editor lacks interfacing to the CLIM redisplay and
+output record mechanism. This should be easy to add for CLIM experts.
+The editor has been designed to support variable width fonts, but this
+hasn't been tested.
+
+The editor is currently standalone, I haven't tried making a line
+editor or a widget out of it, i.e. including it as part of another
+window. This should be fairly easy, since it already keeps itself
+within a specified area within a window.
+
+-----------------------
+
+Features:
+  Most basic editing functionality, including one step undo
+  CLOS Stream I/O interface for MCL and Allegro
+    (If anyone makes a Lucid port, tell me!)
+  Find and Save File
+  Interface to Lisp through eval and macroexpand commands.
+  Handles errors gracefully (traps them all!).
+  Full window editing.
+  Supports word wrapping and fairly efficient redisplay.
+
+-----------------------
+
+To try it load the files named in the system definition,
+edit and eval site-specific.lisp. At the bottom of that file are
+two ways of activating the editor.
+
+-----------------------
+
+This files in the ed directory:
+
+README
+  This file!
+
+ed-packages.lisp
+  Defines all the packages.
+
+ed.lisp
+  The basic editor machinery, excluding all window stuff.
+
+ed-commands.lisp
+  Defines a set of 'commands' meant as the interface to the editor.
+
+ed-stream.lisp
+  Stream interface to the basic editor, both input and output.
+
+wed.lisp
+  The window system part of the editor.
+
+wed-stream.lisp
+  Stream interface to the window editor, both input and output.
+
+wed-frame.lisp
+  Defines the window editor application frame.
+
+wed-frame-commands.lisp
+  The window editor commands.
+
+site-specific.lisp
+  Variables with site-specific values and code to make and activate a frame.
+
+ed.system
+  Defsystem system definition.
+
+ed-commands-doc.lisp
+  Documentation for the window editor commands.
+
+-----------------------
+
+Hallvard Traetteberg
+Dept. of Knowledge Based Systems
+SINTEF SI
+Box 124 Blindern, 0314 Oslo 3
+NORWAY
+
+Tel: +47 22 06 79 83, Fax: +47 22 06 73 50
+Email: Hallvard.Tretteberg@si.sintef.no
+

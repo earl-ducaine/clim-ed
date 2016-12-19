@@ -1,0 +1,766 @@
+(in-package :haled)
+
+;;; **********************************************************************
+;;; Copyright (c) 92, 93 Hallvard Traetteberg.  All rights reserved.
+;;; Use and copying of this software and preparation of derivative works
+;;; based upon this software are permitted and may be copied as long as 
+;;; no fees or compensation are charged for use, copying, or accessing
+;;; this software and all copies of this software include this copyright
+;;; notice.  Suggestions, comments and bug reports are welcome.  Please 
+;;; address email to: Hallvard.Tretteberg@si.sintef.no
+;;; **********************************************************************
+
+(defparameter *standard-line-string-length* 20)
+
+(defun make-edlin-str (string &key (start 0) (end nil) (xtra-space 0))
+  (when string
+    (setf end (or end (length string))))
+  (let* ((len (if string (+ (- end start) xtra-space) *standard-line-string-length*))
+         (str (make-array len :element-type 'character
+                          :fill-pointer (if string (- end start) 0)
+                          :adjustable t)))
+    (when string
+      (replace str string :start2 start :end2 end))
+    (values str)))
+
+(defstruct (edlin)
+  (str (make-edlin-str nil))
+  (modified-at nil)
+  )
+
+(declaim (inline make-marker marker-line marker-col marker-values))
+
+(locally
+ (declare (optimize (speed 3) (space 0)))
+ (defun make-marker   (line col) (cons line col))
+ (defun marker-line   (marker)   (car marker))
+ (defun marker-col    (marker)   (cdr marker))
+ (defun marker-values (marker)   (values (car marker) (cdr marker)))
+
+ (defun definitely-not-marker-p (marker)
+   (or (not (consp marker))
+       (or (not (numberp (car marker)))
+           (not (numberp (cdr marker))))))
+
+ (defun marker-= (marker1 marker2)
+   (and (= (car marker1) (car marker2))
+        (= (cdr marker1) (cdr marker2))))
+
+ (defun marker-<= (marker1 marker2)
+   (or (< (car marker1) (car marker2))
+       (and (=  (car marker1) (car marker2))
+            (<= (cdr marker1) (cdr marker2)))))
+
+ (defun marker-< (marker1 marker2)
+   (or (< (car marker1) (car marker2))
+       (and (= (car marker1) (car marker2))
+            (< (cdr marker1) (cdr marker2)))))
+ )
+
+(defclass haled ()
+  (
+   (markers                               :accessor ed-markers)
+   (replaced          :initform nil       :accessor ed-replaced)
+   (modified-lines    :initform nil       :accessor ed-modified-lines)
+   (lines                                 :accessor ed-lines)
+   (valid-fun :initarg :valid-fun :initform #'standard-char-p :accessor ed-valid-fun)
+   )
+  )
+
+(defmethod edlin-constructor ((ed haled)) (values #'make-edlin))
+
+(defun mark-as-modified (ed marker)
+  (let ((edlin (ed-line ed (marker-line marker))))
+    (if (edlin-modified-at edlin)
+      (setf (edlin-modified-at edlin)
+            (min (marker-col marker) (edlin-modified-at edlin)))
+      (progn
+        (setf (edlin-modified-at edlin) (marker-col marker))
+        (push edlin (ed-modified-lines ed))))
+    ))
+
+(defun make-ed-line (ed line str)
+  (let ((edlin (funcall (edlin-constructor ed) :str str)))
+    (setf (aref (ed-lines ed) line) edlin)
+    (mark-as-modified ed (make-marker line 0))
+    (values edlin)))
+
+
+;;; markers = a set of markers
+
+(defun make-markers ()
+  (make-array 8 :initial-element 'unused-marker :fill-pointer 0 :adjustable t))
+
+(defun map-into-markers (markers fun &optional (identityp nil))
+  (map-into markers
+            #'(lambda (marker)
+                (let ((result marker))
+                  (unless (eq marker 'unused-marker)
+                    (if identityp
+                      (funcall fun marker)
+                      (setf result (funcall fun marker))))
+                  (values result)))
+            markers))
+
+;; (declaim (inline markers-marker (setf markers-marker)))
+(defun markers-marker (markers marker-num) (aref markers marker-num))
+(defun (setf markers-marker) (value markers marker-num)
+  (setf (aref markers marker-num) value))
+
+;; (declaim (inline ed-marker (setf ed-marker)))
+(defun ed-marker (ed marker-num) (markers-marker (ed-markers ed) marker-num))
+(defun (setf ed-marker) (value ed marker-num)
+  (setf (markers-marker (ed-markers ed) marker-num) value))
+
+(defvar *ed-marker-names* nil)
+
+(defmacro define-ed-marker (marker-name)
+  `(progn
+     (unless (member ',marker-name *ed-marker-names*)
+       (setf *ed-marker-names* (nconc *ed-marker-names* (list ',marker-name))))
+     (defvar ,marker-name)
+     ;; (declaim (inline ,marker-name (setf ,marker-name)))
+     (defun ,marker-name (ed) (ed-marker ed ,marker-name))
+     (defun (setf ,marker-name) (value ed)
+       (setf (ed-marker ed ,marker-name) value))
+     )
+  )
+
+(define-ed-marker ed-point)
+(define-ed-marker ed-mark)
+(define-ed-marker ed-replaced-markers)
+(define-ed-marker ed-read-only-markers)
+(define-ed-marker ed-stream-markers)
+
+(defun beginning-of-text (ed &optional marker)
+  (declare (ignore ed marker))
+  (values (make-marker 0 0)))
+
+(defun initial-marker (ed &optional (marker-pos nil))
+  (let ((marker-pos marker-pos))
+    (case marker-pos
+      (:top    (beginning-of-text ed))
+      (:bottom (end-of-text       ed))
+      (:point  (ed-point ed))
+      (:mark   (ed-mark  ed))
+      (t (values marker-pos)))
+    ))
+
+(defun allocate-ed-marker (ed markers)
+  (let* ((markers (if (or (eq markers t) (not markers)) (ed-markers ed) markers))
+         (new-marker-num (or (position 'unused-marker markers)
+                             (vector-push-extend 'unused-marker markers))))
+    (declare (ftype (function (ed &optional t) t) end-of-text))
+    (setf (markers-marker markers new-marker-num) (initial-marker ed))
+    (values new-marker-num)))
+
+(defun deallocate-ed-marker (ed markers marker-num)
+  (let ((markers (if (or (eq markers t) (not markers)) (ed-markers ed) markers)))
+    (setf (markers-marker markers marker-num) 'unused-marker)))
+
+(defmethod initialize-instance :after ((ed haled) &rest initargs)
+  (declare (ignore initargs))
+  (setf (ed-markers ed) (make-markers))
+  (mapc #'(lambda (marker-name)
+            (setf (symbol-value marker-name)
+                  (allocate-ed-marker ed (ed-markers ed))))
+        *ed-marker-names*)
+  (setf (ed-point ed) (initial-marker ed :top))
+  (setf (ed-read-only-markers ed) (make-markers)) ; read-only-regions
+  (setf (ed-stream-markers    ed) (make-markers)) ; stream pointers
+  (setf (ed-lines ed) (make-array 1 :fill-pointer 1 :adjustable t))
+  (make-ed-line ed 0 (make-edlin-str ""))
+  )
+
+(defun ed-line (ed line) (aref (ed-lines ed) line))
+(defun ed-str  (ed line) (edlin-str (ed-line ed line)))
+
+(defun ensure-marker (ed marker)
+  (let ((line (marker-line marker))
+        (col  (marker-col  marker)))
+    (let ((ed-len (length (ed-lines ed))))
+      (if (< line ed-len)
+        (let ((str-len (length (ed-str ed line))))
+          (if (<= col str-len)
+            (values marker)
+            (make-marker line (min col str-len))))
+        (make-marker (1- ed-len) (min col (length (ed-str ed (1- ed-len)))))
+        ))))
+
+(defun end-of-text (ed &optional marker)
+  (declare (ignore marker))
+  (let ((new-line (1- (length (ed-lines ed)))))
+    (values (make-marker new-line (length (ed-str ed new-line))))))
+
+(defun forward-line (ed marker &optional (num 1))
+  (let ((line (+ (marker-line marker) num))
+        (col (marker-col marker))
+        (max-len (length (ed-lines ed))))
+    (if (and (>= line 0) (< line max-len))
+      (values (make-marker line col))
+      (values (make-marker (if (minusp line) 0 (1- max-len)) col) t))))
+
+(defun beginning-of-line (ed marker &optional (num 0))
+  (multiple-value-bind (new-marker error-p) (forward-line ed marker num)
+    (values (make-marker (marker-line new-marker) 0) error-p)))
+
+(defun end-of-line (ed marker &optional (num 0))
+  (multiple-value-bind (new-marker error-p) (forward-line ed marker num)
+    (let ((new-line (marker-line new-marker)))
+      (values (make-marker new-line (length (ed-str ed new-line))) error-p))))
+
+(defun forward-char (ed marker &optional (num 1))
+  (let* ((line (marker-line marker))
+         (str-len (length (ed-str ed line)))
+         (col (min (marker-col marker) str-len)))
+    (incf col num)
+    (if (minusp col)
+      (if (zerop line)
+        (values (beginning-of-text ed (make-marker line col)) t)
+        (forward-char ed (end-of-line ed marker -1) (1+ col)))
+      (let ((len-diff (- col str-len)))
+	(if (plusp len-diff)
+          (if (not (> (length (ed-lines ed)) (1+ line)))
+            (values (end-of-text ed (make-marker line col)) t)
+            (forward-char ed (beginning-of-line ed marker 1) (1- len-diff)))
+          (values (make-marker line col)))
+	))))
+
+(defun search-for (ed marker string &optional (backwardp nil) (search-fun #'search))
+  (let ((marker (ensure-marker ed marker))
+        (string (string string)))
+    (flet ((searcher (str from)
+             (if from
+               (if backwardp
+                 (funcall search-fun string str :end2   from :from-end t)
+                 (funcall search-fun string str :start2 from))
+               (funcall search-fun string str :from-end backwardp)))
+           )
+      (let ((line (marker-line marker))
+            (col  (marker-col marker)))
+        (do ((do-line line (if backwardp (1- do-line) (1+ do-line))))
+            ((or (minusp do-line) (>= do-line (length (ed-lines ed))))
+             (values nil t))
+          (let ((pos (searcher (ed-str ed do-line) (and (= line do-line) col))))
+            (when pos
+              (return-from search-for (make-marker do-line pos))))
+          ))
+      )))
+
+(defun following-char (ed marker)
+  (let* ((line (marker-line marker)) (col (marker-col marker))
+         (str (ed-str ed line)))
+    (if (< col (length str)) (aref str col)
+        (if (< line (1- (length (ed-lines ed)))) #\Newline nil))))
+
+(defun preceding-char (ed marker)
+  (let* ((line (marker-line marker)) (col (marker-col marker))
+         (str (ed-str ed line)))
+    (if (zerop col) (if (zerop line) nil #\Newline) (aref str (1- col)))))
+
+(defun insert-char (ed marker char)
+  (unless (funcall (ed-valid-fun ed) char)
+    (return-from insert-char marker))
+  (setf marker (ensure-marker ed marker))
+  (let* ((line (marker-line marker))
+         (col  (marker-col  marker))
+         (str (ed-str ed line)))
+    (case char
+      ((#\Newline #\Linefeed) ; (eql #\Return #\Newline) => t
+       (let ((lines (ed-lines ed))
+             (new-str (make-edlin-str str :start col)))
+         (setf (fill-pointer str) col)
+         (mark-as-modified ed (make-marker line col))
+         (incf line)
+         (vector-push-extend nil lines)
+         (replace lines lines :start1 (1+ line) :start2 line)
+         (make-ed-line ed line new-str)
+         (mark-as-modified ed (make-marker line 0)))
+       )
+      (t (vector-push-extend #\Space str)
+         (replace str str :start1 (1+ col) :start2 col)
+         (setf (aref str col) char)
+         (mark-as-modified ed (make-marker line col))
+         ))
+    (forward-char ed marker)))
+
+(defun insert-string (ed marker string &key (start 0) (end nil))
+  (setf marker (ensure-marker ed marker)
+        string (string string)
+        end (or end (length string)))
+  (unless (every (ed-valid-fun ed) string)
+    (return-from insert-string marker))
+  (let* ((line (marker-line marker))
+         (col  (marker-col  marker))
+         (str  (ed-str ed line))
+         (old-len (length str))
+         (lines (ed-lines ed)))
+    (let* ((num-newlines (count #\Newline string :start start :end end))
+           (new-len (+ num-newlines (length lines))))
+      (when (> new-len (array-dimension lines 0))
+        (adjust-array lines (+ new-len (min 10 (truncate new-len 4)))))
+      (setf (fill-pointer lines) new-len)
+      (replace lines lines :start1 (+ line num-newlines 1) :start2 (1+ line))
+
+      (let* ((first-newline (position #\Newline string :start start :end end))
+             (last-newline  (position #\Newline string :start start :end end
+                                      :from-end t))
+             (new-len (+ col (- (or first-newline end) start)
+                         (if last-newline 0 (- old-len col))))
+             (new-str (when last-newline
+                        (make-edlin-str string :start (1+ last-newline)
+                                        :xtra-space (- old-len col))))
+             )
+        (when last-newline
+          (incf (fill-pointer new-str) (- old-len col))
+          (replace new-str str :start1 (- end last-newline 1) :start2 col)
+          (make-ed-line ed (+ line num-newlines) new-str))
+        (when (> new-len (array-dimension str 0))
+          (adjust-array str (+ new-len (truncate new-len 4))))
+        (setf (fill-pointer str) new-len)
+        (unless first-newline
+          (replace str str :start1 (+ col (- new-len old-len)) :start2 col))
+        (replace str string :start1 col :start2 start :end2 first-newline)
+        (mark-as-modified ed marker)
+        
+        (do* ((line (1+ line) (1+ line))
+              (last-end first-newline next-end)
+              next-end)
+             ((eql last-end last-newline)
+              (values))
+          (incf last-end)
+          (setf next-end (position #\Newline string :start last-end :end end))
+          (make-ed-line ed line (make-edlin-str string :start last-end :end next-end))
+          )
+        (values (make-marker (+ line num-newlines)
+                             (if last-newline (- end last-newline 1) (+ col (- end start))))
+                t)))))
+
+#|
+(defun adjust-marker-inserting (marker old new)
+  (if (marker-< marker old)
+    (values marker)
+    (if (eql (marker-line marker) (marker-line old))
+      (make-marker (marker-line new)
+                   (+ (marker-col new) (- (marker-col marker) (marker-col old))))
+      (make-marker (+ (marker-line marker) (- (marker-line new) (marker-line old)))
+                   (marker-col marker))))
+  )
+
+(defun adjust-marker-deleting (marker from to)
+  (if (marker-< marker from)
+    (values marker)
+    (if (marker-< marker to)
+      (values from)
+      (if (= (marker-line marker) (marker-line to))
+        (make-marker (marker-line from)
+                     (+ (marker-col from) (- (marker-col marker) (marker-col to))))
+        (make-marker (+ (marker-line from) (- (marker-line marker) (marker-line to)))
+                     (marker-col marker)))
+      )))
+|#
+
+(defun adjust-marker-replacing (ed marker from to1 to2)
+  (declare (ignore ed))
+  (if (marker-< marker from)
+    (values marker)
+    (if (marker-<= marker to1)
+      (values to2)
+      (if (= (marker-line marker) (marker-line to1))
+        (make-marker (marker-line to1)
+                     (+ (marker-col to2) (- (marker-col marker) (marker-col to1))))
+        (make-marker (+ (marker-line to2) (- (marker-line marker) (marker-line to1)))
+                     (marker-col marker)))
+      )))
+
+(defun adjust-markers (ed from to1 to2)
+  (labels ((adjust-markers-aux (markers)
+             (cond ((not markers) (values markers))
+                   ((typep markers 'vector)
+                    (map-into-markers markers #'adjust-markers-aux))
+                   (t (adjust-marker-replacing ed markers from to1 to2))))
+           )
+    (map-into-markers (ed-markers ed) #'adjust-markers-aux)
+    ))
+
+(defun make-region (ed &optional (from (ed-point ed)) (to (ed-mark ed)))
+  (setf from (ensure-marker ed from)
+        to   (ensure-marker ed to))
+  (unless (marker-<= from to)
+    (rotatef from to))
+  (values (vector from to)))
+
+(defun region-from (region) (aref region 0))
+(defun region-to   (region) (aref region 1))
+
+(defun mark-region-as-read-only (ed region)
+  (let ((new-marker-num (allocate-ed-marker ed (ed-read-only-markers ed))))
+    (setf (markers-marker (ed-read-only-markers ed) new-marker-num) region)
+    (values new-marker-num)))
+
+(defun unmark-read-only-region (ed marker-num)
+  (deallocate-ed-marker ed (ed-read-only-markers ed) marker-num))
+
+(defun marker-in-region-p (marker region)
+  (and (marker-<= marker (region-to region))
+       (not (marker-< marker (region-from region)))))
+
+(defun region-read-only-p (ed region)
+  (let ((from (region-from region))
+        (to   (region-to   region)))
+    (flet ((in-read-only-region (markers)
+             (and markers
+                  (or (marker-in-region-p from markers)
+                      (marker-in-region-p to   markers))))
+           )
+      (some #'in-read-only-region (ed-read-only-markers ed)))))
+
+(define-condition haled-error (error) () (:documentation "Abstract ED error"))
+
+(define-condition haled-read-only-error (haled-error) ()
+  (:documentation "Trying to modify read-only region")
+  (:report "Trying to modify read-only region")
+  )
+
+(defun make-newlined-string (strings &optional (newline-end-p nil) (only-strings-p nil))
+  (let ((strings (map 'list #'(lambda (string)
+                                (if (edlin-p string) (edlin-str string) string))
+                      strings)))
+    (when only-strings-p
+      (return-from make-newlined-string strings))
+    (let* ((length (+ #+:reduce-has-key (reduce #'+ strings :key #'length)
+                      #-:reduce-has-key (reduce #'+ (mapcar #'length strings))
+                      (+ (length (cdr strings)) (if newline-end-p 1 0))))
+           (newlined-string (make-string length :initial-element #\Newline)))
+      (do ((pos 0 (+ pos (1+ (length (car strings)))))
+           (strings strings (cdr strings)))
+          ((null strings) (values newlined-string))
+        (replace newlined-string (car strings) :start1 pos))
+      )))
+
+(defun region-string (ed region)
+  (let ((strings nil))
+    (let ((from (region-from region))
+          (to   (region-to   region)))
+      (let ((from-line (marker-line from))
+            (from-col  (marker-col  from))
+            (to-line   (marker-line to))
+            )
+        (when (< from-line to-line)
+          (let ((from-str (ed-str ed from-line)))
+            (push (subseq from-str from-col (length from-str)) strings)))
+        
+        (do ((do-line (1+ from-line) (1+ do-line)))
+            ((>= do-line to-line))
+          (push (ed-str ed do-line) strings))
+        
+        (let ((to-col (marker-col  to))
+              (to-str (ed-str ed to-line))
+              (col (if (= from-line to-line) from-col 0)))
+          (push (subseq to-str col to-col) strings))
+        ))
+    (values (make-newlined-string (nreverse strings)))))
+
+(defun ed-text-as-string (ed)
+  (region-string ed (make-region ed (beginning-of-text ed) (end-of-text ed))))
+
+(defun read-newlined-string (stream)
+  (let ((strings nil))
+    (loop
+      (multiple-value-bind (string newline-p) (read-line stream nil nil)
+        (when string
+          (push string strings))
+        (when (or newline-p (not string))
+          (return (make-newlined-string (nreverse strings) (not newline-p))))
+        ))
+    ))
+
+(defun insert (ed marker thing &optional (undoable-p nil) (adjust-p t))
+  (when (region-read-only-p ed (make-region ed marker marker))
+    (error 'ed-read-only-error))
+  (setf marker (ensure-marker ed marker))
+  (labels ((insert-aux (marker thing)
+             (typecase thing
+               (edlin     (insert-string ed marker (edlin-str thing)))
+               (string    (insert-string ed marker thing))
+               (character (insert-char   ed marker thing))
+               (stream    (insert-aux marker (read-newlined-string thing)))
+               (cons      (insert-aux (insert-aux marker (car thing)) (cdr thing)))
+               (t         (values marker nil)))))
+    (let ((new-marker (insert-aux marker thing)))
+      (when adjust-p
+        (adjust-markers ed marker marker new-marker))
+      (when undoable-p
+        (setf (ed-replaced-markers ed) (make-region ed marker new-marker)))
+      (values new-marker)
+      )))
+
+(defun kill-region (ed region)
+  (when (region-read-only-p ed region)
+    (error 'ed-read-only-error))
+  (let ((from (region-from region))
+        (to   (region-to   region)))
+    (let* ((from-line (marker-line from))
+           (to-line   (marker-line to))
+           (from-str (ed-str ed from-line))
+           (to-str   (ed-str ed to-line))
+           (from-col  (min (marker-col  from) (length from-str)))
+           (to-col    (min (marker-col  to)   (length to-str)))
+           )
+      (if (= from-line to-line)
+        (progn
+          (replace from-str from-str :start1 from-col :start2 to-col)
+          (decf (fill-pointer from-str) (- to-col from-col)))
+        (let* ((from-str-len (length from-str))
+               (to-str-len   (length to-str))
+               (new-len (+ from-str-len to-str-len)))
+          (when (> new-len (array-dimension from-str 0))
+            (adjust-array from-str (+ new-len (truncate new-len 4))))
+          (setf (fill-pointer from-str) new-len)
+          (replace from-str to-str :start1 from-col :start2 to-col)
+          (decf (fill-pointer from-str) (+ (- from-str-len from-col) to-col))
+          (let ((lines (ed-lines ed)))
+            (replace lines lines :start1 (1+ from-line) :start2 (1+ to-line))
+            (decf (fill-pointer lines) (- to-line from-line)))
+          ))
+      (mark-as-modified ed from)
+      (values from))))
+
+(defun replace-region (ed region replacement &optional (undoable-p t))
+  (when (region-read-only-p ed region)
+    (error 'ed-read-only-error))
+  (let ((region-string nil) new-string)
+    (when (and replacement (symbolp replacement))
+      (setf replacement (symbol-function replacement)))
+    (if (functionp replacement)
+      (setf region-string (region-string ed region)
+            new-string    (funcall replacement region-string))
+      (setf new-string replacement))
+    (when (and undoable-p (not region-string))
+      (setf region-string (region-string ed region)))
+    (kill-region ed region)
+    (let ((new-marker (if replacement
+                        (insert ed (region-from region) new-string nil nil)
+                        (region-from region))))
+      (adjust-markers ed (region-from region) (region-to region) new-marker)
+      (if (and undoable-p (not (eq region-string new-string)))
+        (setf (ed-replaced-markers ed) (make-region ed (region-from region) new-marker)
+              (ed-replaced ed) region-string)
+        (setf (ed-replaced-markers ed) nil))
+      (values new-marker))
+    ))
+
+(defun undo-replace (ed)
+  (let ((region (ed-replaced-markers ed)))
+    (when region
+      (replace-region ed region (ed-replaced ed) nil))
+    ))
+
+(defun delete-region (ed region)
+  (replace-region ed region nil))
+
+(defun tabulate (ed marker &optional (fill-char #\Space) (pad-char #\Space))
+  (setf marker (ensure-marker ed marker))
+  (let ((this-line (marker-line marker))
+        (this-col  (marker-col  marker)))
+    (let* ((this-string (ed-str ed this-line))
+           (this-strlen (length this-string)))
+      (unless (or (> this-line 0)
+                  (>= this-col this-strlen)
+                  (char-equal (aref this-string pad-char)))
+        (return-from tabulate marker))
+      (flet ((pad-end-position (string start &optional (skip-non-pads-p nil))
+               (let ((pad-pos (if skip-non-pads-p
+				  (position pad-char string :start start :test #'char-equal)
+				start)))
+                 (when pad-pos
+                   (setf pad-pos (position pad-char string :start pad-pos :test #'char-not-equal)))
+                 (or pad-pos (length string))))
+             )
+        (let* ((untab-col (pad-end-position this-string this-col))
+               (tab-region (make-region ed marker (make-marker this-line untab-col))))
+          (let ((above-string (ed-str ed (1- this-line))))
+            (let ((tab-nums (if (< this-col (length above-string))
+                              (- (pad-end-position above-string this-col t) this-col)
+                              0)))
+              (replace-region ed tab-region
+                              (make-string tab-nums :initial-element fill-char)))
+            )))
+      )))
+
+(define-condition haled-command-error (haled-error)
+  ((command :initarg :command :reader ed-command-error-command))
+  (:documentation "Abstract ED command error")
+  (:report (lambda (condition stream)
+             (format stream "Offending command: ~a"
+                     (ed-command-error-command condition))))
+  )
+
+(define-condition unknown-haled-command (haled-command-error) ()
+  (:documentation "Command argument to ed-command-case is not recognized"))
+
+(define-condition illegal-haled-command (haled-command-error) ()
+  (:documentation "Command argument to ed-command-case is illegal in this context"))
+
+;;; ed-command mechanisms
+
+(defvar *haled-command-alist* nil)
+
+(defvar *haled-commands* (make-hash-table :test #'eq :size 31))
+
+(defstruct (ed-command (:constructor make-ed-command (type fun ed-args args caller)))
+  (type    nil) ; could be :motion, :mover, :changer etc, for future use
+  (fun     nil)
+  (ed-args nil)
+  (args    nil)
+  (caller  nil)
+  )
+
+(define-condition haled-mark-not-set-error (haled-error) ()
+  (:documentation "The mark isn't set")
+  (:report "The mark isn't set")
+  )
+
+(defun mark-or-point-if-error (mark point)
+  (if mark
+    (values mark)
+    (restart-case (error 'haled-mark-not-set-error)
+      (use-point-instead-of-mark-restart ()
+                                         :report "Use point instead of mark"
+                                         (values point))))
+  )
+
+(defun ed-command-no-args-caller (ed point mark fun &optional (args nil))
+  (declare (ignore point mark))
+  (apply fun ed args))
+
+(defun ed-command-point-caller (ed point mark fun &optional (args nil))
+  (declare (ignore mark))
+  (apply fun ed point args))
+
+(defun ed-command-mark-caller (ed point mark fun &optional (args nil))
+  (apply fun ed (mark-or-point-if-error mark point) args))
+
+(defun ed-command-point-mark-caller (ed point mark fun &optional (args nil))
+  (apply fun ed point (mark-or-point-if-error mark point) args))
+
+(defun ed-command-region-caller (ed point mark fun &optional (args nil))
+  (apply fun ed (make-region ed point (mark-or-point-if-error mark point)) args))
+
+(defun ed-command-ed-args-caller (ed point mark fun ed-args &optional (args nil))
+  (flet ((arg-value (arg)
+           (ecase arg
+             (point point)
+             (mark  (mark-or-point-if-error mark point))
+             (region (make-region ed point (mark-or-point-if-error mark point)))))
+         )
+    (apply fun ed (nconc (mapcar #'arg-value ed-args) args))))
+
+(defun install-ed-command (command fun ed-args &optional (args nil) (type nil))
+  (let* ((caller (cond ((eq ed-args nil)              #'ed-command-no-args-caller)
+                       ((equal ed-args '(point))      #'ed-command-point-caller)
+                       ((equal ed-args '(mark))       #'ed-command-mark-caller)
+                       ((equal ed-args '(point mark)) #'ed-command-point-mark-caller)
+                       ((equal ed-args '(region))     #'ed-command-region-caller)
+                       (t #'ed-command-ed-args-caller)))
+         (ed-command (make-ed-command type fun ed-args args caller)))
+    (setf (gethash command *haled-commands*) ed-command)
+    ))
+
+(defun duplicate-ed-command (command-to-duplicate command)
+  (flet ((install (command)
+           (setf (gethash command *haled-commands*) 
+                 (gethash command-to-duplicate *haled-commands*)))
+         )
+    (if (listp command)
+      (mapc #'install command)
+      (install command))))
+
+(defmacro define-ed-command (command type ed-args &optional (args nil) &body body)
+  (unless (eq (car ed-args) 'ed)
+    (push 'ed ed-args))
+  `(let ((fun #',(cond ((null body) command)
+                       ((symbolp body) body)
+                       (t `(lambda ,(append ed-args args) . ,body)))))
+     (install-ed-command ',command fun ',(cdr ed-args) ',args ',type))
+  )
+
+(defmacro define-ed-command-duplicates (command-to-duplicate &rest commands)
+  `(duplicate-ed-command ',command-to-duplicate ',commands))
+
+(defmacro define-ed-motion (command ed-args &optional (args nil) &body body)
+  `(define-ed-command ,command :motion ,ed-args ,args . ,body))
+
+(defmacro define-ed-mover (command ed-args &optional (args nil) &body body)
+  `(define-ed-command ,command :mover ,ed-args ,args . ,body))
+
+(defmacro define-ed-changer (command ed-args &optional (args nil) &body body)
+  `(define-ed-command ,command :changer ,ed-args ,args . ,body))
+
+(defun ed-command-lookup (ed command &optional (only-command-alist nil))
+  (declare (ignore ed))
+  (loop
+    (let ((com-acons (assoc command *haled-command-alist*)))
+      (if (and com-acons (not (eql (cdr com-acons) command)))
+        (setf command (cdr com-acons))
+        (return))))
+  (if (or only-command-alist (ed-command-p command))
+    (values command)
+    (values (gethash command *haled-commands*)))
+  )
+
+(defun ed-command (ed command &optional (args nil) (point-num ed-point) (mark-num ed-mark)
+                      (markers (ed-markers ed)))
+  (unless (listp args)
+    (setf args (list args)))
+  (let ((point (markers-marker markers point-num))
+        (mark  (and mark-num (markers-marker markers mark-num)))
+        )
+    (let (new-marker error-p)
+      (let ((ed-command (ed-command-lookup ed command)))
+        (cond ((eq ed-command t)
+               (insert ed point command nil t))
+              (ed-command
+               (multiple-value-setq (new-marker error-p)
+                 (if (and (not mark) (member 'mark (ed-command-ed-args ed-command)))
+                   (values point t)
+                   (funcall (ed-command-caller ed-command) ed point mark
+                            (ed-command-fun ed-command) args))))
+              (t (restart-case (error 'unknown-haled-command :command command)
+                   (ignore-haled-command-error-restart ()
+                                                       :report "Ignore ed command error"
+                                                       (values new-marker)))
+                 )))
+      (when (and new-marker (not error-p))
+        (setf (markers-marker markers point-num) new-marker))
+      (values new-marker error-p))))
+
+(defun motion-region-funcall (ed point motion fun)
+  (let ((motion-commands (mapcar #'(lambda (command)
+                                    (ed-command-lookup ed command))
+                                motion)))
+    (unless (every #'(lambda (ed-command)
+                       (and (ed-command-p ed-command)
+                            (eq (ed-command-type ed-command) :motion)))
+                   motion-commands)
+      (return-from motion-region-funcall))
+    (let ((new-point point) (error-p nil))
+      (mapc #'(lambda (ed-command)
+                (multiple-value-setq (new-point error-p)
+                  (funcall (ed-command-fun ed-command) ed point)))
+            motion-commands)
+      (let ((region (make-region ed point new-point)))
+        (funcall (if (ed-command-p fun) (ed-command-fun fun) fun) ed region))
+      )))
+
+(defun motion-replace (ed point motion replacement)
+  (flet ((replacer (ed region)
+           (replace-region ed region replacement))
+         )
+    (motion-region-funcall ed point motion #'replacer)))
+
+(defun motion-delete (ed point motion)
+  (motion-replace ed point motion nil))
+
+;;;
+
