@@ -4,10 +4,10 @@
 ;;; Copyright (c) 92, 93 Hallvard Traetteberg, Claudio Massucho.
 ;;; All rights reserved.
 ;;; Use and copying of this software and preparation of derivative works
-;;; based upon this software are permitted and may be copied as long as 
+;;; based upon this software are permitted and may be copied as long as
 ;;; no fees or compensation are charged for use, copying, or accessing
 ;;; this software and all copies of this software include this copyright
-;;; notice.  Suggestions, comments and bug reports are welcome.  Please 
+;;; notice.  Suggestions, comments and bug reports are welcome.  Please
 ;;; address email to: Hallvard.Tretteberg@si.sintef.no
 ;;; **********************************************************************
 
@@ -20,14 +20,14 @@
 
 (defclass haled-output-stream (haled-stream
                             #+:mcl     ccl:output-stream
-                            #+:allegro stream:fundamental-character-output-stream
+                            #+:allegro fundamental-character-output-stream
                             )
   ()
   )
 
 (defclass haled-input-stream (haled-stream
                             #+:mcl     ccl:input-stream
-                            #+:allegro stream:fundamental-character-input-stream
+                            #+:allegro fundamental-character-input-stream
                             )
   ((last-tyi  :initform nil :accessor ed-input-stream-last-tyi))
   )
@@ -53,7 +53,7 @@
 
 (defmethod
   #+:mcl     ccl:stream-tyo
-  #+:allegro stream::stream-write-char
+  #+:allegro stream-write-char
   ((stream haled-output-stream) char)
   (let ((ed (ed-stream-ed stream)))
     (ed:insert ed (ed:markers-marker (ed:ed-stream-markers ed)
@@ -65,7 +65,7 @@
 
 (defmethod
   #+:mcl     ccl:stream-force-output
-  #+:allegro stream::stream-force-output
+  #+:allegro stream-force-output
   ((stream haled-output-stream))
   (declare (ignore stream)))
 
@@ -73,7 +73,7 @@
 
 (defmethod
   #+:mcl     ccl:stream-tyi
-  #+:allegro stream::stream-read-char
+  #+:allegro stream-read-char
   ((stream haled-input-stream))
   (block stream-tyi
     (let ((last-char (ed-input-stream-last-tyi stream)))
@@ -98,7 +98,7 @@
 
 (defmethod
   #+:mcl     ccl:stream-untyi
-  #+:allegro stream:stream-unread-char
+  #+:allegro stream-unread-char
   ((stream haled-input-stream) char)
   (setf (ed-input-stream-last-tyi stream) char)
   (values
@@ -107,22 +107,10 @@
    )
   )
 
-;;; stream oefp
-
-#+:mcl
-(defmethod ccl:stream-eofp ((stream haled-input-stream))
-  (let* ((ed (ed-stream-ed stream))
-         (markers (ed:ed-stream-markers ed))
-         (marker-num (ed-stream-marker-num stream))
-         (marker (ed:markers-marker markers marker-num))
-         (char (ed:following-char ed marker)))
-    (values (not char))))
-
-;;; stream close
 
 (defmethod
   #+:mcl     ccl:stream-close #+:mcl :after
-  #+:allegro stream::close
+  #+:allegro close
   ((stream haled-stream) .
    #+:mcl nil
    #+:allegro (&key abort))
@@ -137,7 +125,7 @@
 
 (defmethod
   #+:mcl     ccl:stream-fresh-line
-  #+:allegro stream::stream-fresh-line
+  #+:allegro stream-fresh-line
   ((stream haled-output-stream))
   (let* ((ed (ed-stream-ed stream))
          (marker-num (ed-stream-marker-num stream))
@@ -145,7 +133,7 @@
     (unless (zerop (ed:marker-col marker))
       (
        #+:mcl     ccl:stream-tyo
-       #+:allegro stream::stream-write-char
+       #+:allegro stream-write-char
        stream #\Newline))
     ))
 
@@ -153,7 +141,7 @@
 
 (defmethod
   #+:mcl     ccl:stream-clear-input
-  #+:allegro stream::stream-clear-input
+  #+:allegro stream-clear-input
   ((stream haled-input-stream))
   (declare (ignore stream)))
 
@@ -164,7 +152,7 @@
   (ccl:stream-close stream))
 #+:allegro
 (defmethod stream-abort ((stream haled-stream))
-  (stream::stream-close stream :abort t))
+  (stream-close stream :abort t))
 
 ;;; stream column
 
@@ -189,7 +177,7 @@
 
 (defmethod
   #+:mcl     ccl:stream-write-string
-  #+:allegro stream::stream-write-string
+  #+:allegro stream-write-string
   ((stream haled-output-stream) string . ; Note this dot!
    #+:mcl (start end)
    #+:allegro (&optional (start 0) (end (length string))))

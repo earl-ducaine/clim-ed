@@ -4,10 +4,10 @@
 ;;; Copyright (c) 92, 93 Hallvard Traetteberg, Claudio Massucho.
 ;;; All rights reserved.
 ;;; Use and copying of this software and preparation of derivative works
-;;; based upon this software are permitted and may be copied as long as 
+;;; based upon this software are permitted and may be copied as long as
 ;;; no fees or compensation are charged for use, copying, or accessing
 ;;; this software and all copies of this software include this copyright
-;;; notice.  Suggestions, comments and bug reports are welcome.  Please 
+;;; notice.  Suggestions, comments and bug reports are welcome.  Please
 ;;; address email to: Hallvard.Tretteberg@si.sintef.no
 ;;; **********************************************************************
 
@@ -17,7 +17,7 @@
 
 (defmethod
   #+:mcl     ccl:stream-tyo
-  #+:allegro stream::stream-write-char
+  #+:allegro stream-write-char
   :after
   ((stream halwed-output-stream) char)
   (when (member char '(#\Newline #\Return))
@@ -26,9 +26,9 @@
       (wed:refresh-wed wed))
     ))
 
-(defmethod 
+(defmethod
   #+:mcl     ccl:stream-force-output
-  #+:allegro stream::stream-force-output
+  #+:allegro stream-force-output
   :after
   ((stream halwed-output-stream))
   (let ((wed (ed-stream-ed stream)))
@@ -44,7 +44,7 @@
 
 (defmethod
   #+:mcl     ccl:stream-write-string
-  #+:allegro stream::stream-write-string
+  #+:allegro stream-write-string
   :after
   ((stream halwed-output-stream) string .
    #+:mcl (start end)
