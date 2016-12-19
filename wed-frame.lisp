@@ -4,10 +4,10 @@
 ;;; Copyright (c) 92, 93 Hallvard Traetteberg, Claudio Massucho.
 ;;; All rights reserved.
 ;;; Use and copying of this software and preparation of derivative works
-;;; based upon this software are permitted and may be copied as long as 
+;;; based upon this software are permitted and may be copied as long as
 ;;; no fees or compensation are charged for use, copying, or accessing
 ;;; this software and all copies of this software include this copyright
-;;; notice.  Suggestions, comments and bug reports are welcome.  Please 
+;;; notice.  Suggestions, comments and bug reports are welcome.  Please
 ;;; address email to: Hallvard.Tretteberg@si.sintef.no
 ;;; **********************************************************************
 
@@ -35,20 +35,18 @@
    (comtab :initform 'lisp-editor-comtab        :initarg :comtab :accessor wed-frame-comtab)
    (tool   :initform (make-instance 'wed-tool)  :initarg :tool   :accessor wed-frame-tool)
    )
-  (:panes ((title :title :display-string "Window editor frame")
-           (wed :application :scroll-bars :vertical
-                :default-text-style (clim:make-text-style :fix :roman :small)
-                :display-after-commands nil
-                :display-function 'draw-wed-pane)
-           (minibuffer :interactor)
-           ))
-  (:layout ((default (:column 1 (title :compute) (wed :rest) (minibuffer 1/8)))))
-  )
+  (:panes (title :title :display-string "Window editor frame")
+	  (wed :application :scroll-bars :vertical
+	       :default-text-style (clim:make-text-style :fix :roman :small)
+	       :display-after-commands nil
+	       :display-function 'draw-wed-pane)
+	  (minibuffer :interactor))
+  (:layouts (default (:column 1 (title :compute) (wed :rest) (minibuffer 1/8)))))
 
 (defun draw-wed-pane (frame pane)
   (setf (slot-value pane 'clim::current-text-style)
         (slot-value pane 'clim::merged-text-style))
-  (clim:with-output-recording-options (pane :record-p nil :draw-p t)
+  (clim:with-output-recording-options (pane :draw t)
     (wed:refresh-wed (wed-frame-wed frame) t))
   )
 
@@ -91,7 +89,7 @@
   (let ((pane (current-wed-pane frame))
         (button-pressed-p nil))
     (catch 'tracking-pointer
-      (unwind-protect 
+      (unwind-protect
         (clim:with-output-recording-options (pane :draw-p t :record-p nil)
           (clim:tracking-pointer (pane :multiple-window t :context-type nil)
              (:pointer-motion (window x y)
