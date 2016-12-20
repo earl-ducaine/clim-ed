@@ -42,8 +42,10 @@
 	 title wed minibuffer))))
 
 (defun draw-wed-pane (frame pane)
-  (setf (medium-text-style (frame-top-level-sheet frame))
-	(medium-merged-text-style (frame-top-level-sheet frame)))
+  ;; (setf (medium-text-style (frame-top-level-sheet frame))
+  ;; 	(medium-merged-text-style (frame-top-level-sheet frame)))
+  (setf (medium-text-style pane)
+	(medium-merged-text-style pane))
   (with-output-recording-options (pane :draw t)
     (wed:refresh-wed (wed-frame-wed frame) t))
   )
