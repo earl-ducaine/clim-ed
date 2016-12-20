@@ -1,16 +1,18 @@
 ;;; **********************************************************************
 ;;; Copyright (c) 92, 93 Hallvard Traetteberg.  All rights reserved.
 ;;; Use and copying of this software and preparation of derivative works
-;;; based upon this software are permitted and may be copied as long as 
+;;; based upon this software are permitted and may be copied as long as
 ;;; no fees or compensation are charged for use, copying, or accessing
 ;;; this software and all copies of this software include this copyright
-;;; notice.  Suggestions, comments and bug reports are welcome.  Please 
+;;; notice.  Suggestions, comments and bug reports are welcome.  Please
 ;;; address email to: Hallvard.Tretteberg@si.sintef.no
 ;;; **********************************************************************
 
+
+
 (defpackage :haled
-  (:nicknames "ED")
-  (:use "COMMON-LISP")
+  (:nicknames :ed)
+  (:use :clim :common-lisp)
   (:export
 
    "EDLIN" "EDLIN-STR" "EDLIN-MODIFIED-AT" "EDLIN-CONSTRUCTOR"
@@ -27,7 +29,7 @@
    "ED-MARKER" "ED-POINT" "ED-MARK"
    "ED-REPLACED-MARKERS" "ED-READ-ONLY-MARKERS" "ED-STREAM-MARKERS"
    "INITIAL-MARKER" "ALLOCATE-ED-MARKER" "DEALLOCATE-ED-MARKER"
-   
+
    "FORWARD-LINE" "FORWARD-CHAR"
    "BEGINNING-OF-LINE" "END-OF-LINE" "BEGINNING-OF-TEXT" "END-OF-TEXT"
 
@@ -51,7 +53,7 @@
    "*HALED-COMMAND-ALIST*"
 
    "INSTALL-ED-COMMAND" "DUPLICATE-ED-COMMAND"
-   "DEFINE-ED-COMMAND" "DEFINE-ED-COMMAND-DUPLICATES" 
+   "DEFINE-ED-COMMAND" "DEFINE-ED-COMMAND-DUPLICATES"
    "DEFINE-ED-MOTION" "DEFINE-ED-MOVER" "DEFINE-ED-CHANGER"
    "ED-COMMAND-LOOKUP" "ED-COMMAND"
    "PREVIOUS-LINE" "NEXT-LINE" "BACKWARD-CHAR" "FORWARD-CHAR"
@@ -73,8 +75,8 @@
   )
 
 (defpackage :halwed
-  (:nicknames "WED")
-  (:use "COMMON-LISP" "HALED")
+  (:nicknames :wed)
+  (:use :common-lisp :haled)
   (:export
    "HALWED"
    "WED-WIN"
@@ -104,7 +106,7 @@
 
 (defpackage :halwed-frame
   (:nicknames "WEDF")
-  (:use "COMMON-LISP" "HALWED" "HALWED-STREAM")
+  (:use :clim :common-lisp :halwed :halwed-stream)
   (:export
    "TEXT-EDITOR-COMTAB" "LISP-EDITOR-COMTAB"
 
@@ -117,3 +119,7 @@
    "ACTIVATE-WED-FRAME-WITH-STREAM-FUN"
    "ACTIVATE-WED-WITH-PRINT-FUN"
    ))
+
+
+(defvar clim::+BACKGROUND+ nil)
+(export 'clim::+BACKGROUND+ :clim)

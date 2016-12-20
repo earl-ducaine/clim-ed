@@ -1,10 +1,10 @@
 ;;; **********************************************************************
 ;;; Copyright (c) 92, 93 Hallvard Traetteberg. All rights reserved.
 ;;; Use and copying of this software and preparation of derivative works
-;;; based upon this software are permitted and may be copied as long as 
+;;; based upon this software are permitted and may be copied as long as
 ;;; no fees or compensation are charged for use, copying, or accessing
 ;;; this software and all copies of this software include this copyright
-;;; notice.  Suggestions, comments and bug reports are welcome.  Please 
+;;; notice.  Suggestions, comments and bug reports are welcome.  Please
 ;;; address email to: Hallvard.Tretteberg@si.sintef.no
 ;;; **********************************************************************
 
@@ -22,3 +22,22 @@
                                             "ed-stream" "wed-stream"
                                             "wed-frame"))
    ))
+
+
+
+(in-package :wedf)
+
+(defun load-files ()
+  (load "/home/rett/dev/clim-ed/package.lisp")
+  (load "/home/rett/dev/clim-ed/ed.lisp")
+  (load "/home/rett/dev/clim-ed/ed-commands.lisp")
+  (load "/home/rett/dev/clim-ed/wed.lisp")
+  (load "/home/rett/dev/clim-ed/ed-stream.lisp")
+  (load "/home/rett/dev/clim-ed/wed-stream.lisp")
+  (load "/home/rett/dev/clim-ed/wed-frame.lisp")
+  (load "/home/rett/dev/clim-ed/wed-frame-commands.lisp")
+  (load "/home/rett/dev/clim-ed/site-specific.lisp"))
+
+(defun run-ed ()
+  (activate-wed-frame *wed-frame*)
+  (clim:run-frame-top-level *wed-frame*))

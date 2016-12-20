@@ -4,17 +4,17 @@
 ;;; Copyright (c) 92, 93 Hallvard Traetteberg, Claudio Massucho.
 ;;; All rights reserved.
 ;;; Use and copying of this software and preparation of derivative works
-;;; based upon this software are permitted and may be copied as long as 
+;;; based upon this software are permitted and may be copied as long as
 ;;; no fees or compensation are charged for use, copying, or accessing
 ;;; this software and all copies of this software include this copyright
-;;; notice.  Suggestions, comments and bug reports are welcome.  Please 
+;;; notice.  Suggestions, comments and bug reports are welcome.  Please
 ;;; address email to: Hallvard.Tretteberg@si.sintef.no
 ;;; **********************************************************************
 
-(setf *root*
-      #+:mcl     (clim:open-root-window :mcl)
-      #+:allegro (clim:open-root-window :clx)
-      )
+(defparameter *root* (clim:find-port))
+;;      #+:mcl     (clim:open-root-window :mcl)
+;;      #+:allegro (clim:open-root-window :clx)
+;;      )
 
 (setf *halwed-tool-command-alist*
       `(
@@ -30,7 +30,7 @@
         (,(control-char #\e) . ed:end-of-line)
         (,(meta-char    #\<) . ed:beginning-of-text)
         (,(make-char #\> :shift :meta) . ed:end-of-text)
-        
+
         (#\Tab . ed:tabulate)
 
         (,(control-char #\w) . ed:delete-region)
@@ -48,9 +48,15 @@
         (,(make-char    #\y :control :meta) . ed:knay)
         ))
 
-(setf *wed-frame* (clim:make-application-frame 'wed-frame :parent *root*))
+;;(setf *wed-frame* (clim:make-application-frame 'wed-frame :parent *root*))
+(defparameter *wed-frame* (make-application-frame 'wed-frame))
 
-#|                                            
+
+;; sheets can have a text style this returns it.
+;; (clim:medium-text-style (frame-top-level-sheet *wed-frame*))
+
+
+#|
 (flet ((print-fun ()
          (format t "This is a great text editor"))
        )

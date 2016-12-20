@@ -14,52 +14,50 @@
 ;;; wed-tool
 
 (defclass wed-tool ()
-  (
-   (name :initarg :name :initform "WED" :accessor name)
-   )
-  )
+  ((name :initarg :name :initform "WED" :accessor name)))
 
 (defmethod reset-tool ((tool wed-tool)) (declare (ignore tool)))
 (defgeneric tool-handler (tool frame))
 
 ;;; comtabs
 
-(clim:define-command-table text-editor-comtab)
-(clim:define-command-table lisp-editor-comtab :inherit-from (text-editor-comtab))
+(define-command-table text-editor-comtab)
+(define-command-table lisp-editor-comtab :inherit-from (text-editor-comtab))
 
 ;;;
 
-(clim:define-application-frame wed-frame ()
-  (
-   (wed    :initform (make-instance 'halwed)    :initarg :wed    :accessor wed-frame-wed)
-   (comtab :initform 'lisp-editor-comtab        :initarg :comtab :accessor wed-frame-comtab)
-   (tool   :initform (make-instance 'wed-tool)  :initarg :tool   :accessor wed-frame-tool)
-   )
+(define-application-frame wed-frame ()
+  ((wed :initform (make-instance 'halwed) :initarg :wed :accessor wed-frame-wed)
+   (comtab :initform 'lisp-editor-comtab :initarg :comtab :accessor wed-frame-comtab)
+   (tool :initform (make-instance 'wed-tool) :initarg :tool :accessor wed-frame-tool))
   (:panes (title :title :display-string "Window editor frame")
 	  (wed :application :scroll-bars :vertical
-	       :default-text-style (clim:make-text-style :fix :roman :small)
+	       :default-text-style (make-text-style :fix :roman :small)
 	       :display-after-commands nil
 	       :display-function 'draw-wed-pane)
 	  (minibuffer :interactor))
-  (:layouts (default (:column 1 (title :compute) (wed :rest) (minibuffer 1/8)))))
+  (:layouts
+   (default
+       (vertically ()
+	 title wed minibuffer))))
 
 (defun draw-wed-pane (frame pane)
-  (setf (slot-value pane 'clim::current-text-style)
-        (slot-value pane 'clim::merged-text-style))
-  (clim:with-output-recording-options (pane :draw t)
+  (setf (medium-text-style (frame-top-level-sheet frame))
+	(medium-merged-text-style (frame-top-level-sheet frame)))
+  (with-output-recording-options (pane :draw t)
     (wed:refresh-wed (wed-frame-wed frame) t))
   )
 
 (defun redisplay-wed-frame-wed-pane (frame &key (force-p nil))
-  (let ((pane (clim:get-frame-pane frame 'wed)))
-    (clim:with-output-recording-options (pane :record-p nil :draw-p t)
+  (let ((pane (get-frame-pane frame 'wed)))
+    (with-output-recording-options (pane :record nil :draw t)
       (wed:wed-command (wed-frame-wed frame) (if force-p 'wed:layout 'wed:refresh)))
     ))
 
-(defun current-wed-pane (&optional (frame clim:*application-frame*))
-  (values (clim:get-frame-pane frame 'wed)))
+(defun current-wed-pane (&optional (frame *application-frame*))
+  (values (get-frame-pane frame 'wed)))
 
-(defun current-wed (&optional (frame clim:*application-frame*))
+(defun current-wed (&optional (frame *application-frame*))
   (wed-frame-wed frame))
 
 (defmethod activate-wed-frame ((frame wed-frame))
@@ -70,9 +68,9 @@
     ))
 
 (defmethod activate-wed-frame :around ((frame wed-frame))
-  (setf (clim:frame-command-table frame) (wed-frame-comtab frame))
+  (setf (frame-command-table frame) (wed-frame-comtab frame))
   (call-next-method)
-  (clim:redisplay-frame-pane frame 'wed :force-p t))
+  (redisplay-frame-pane frame 'wed :force-p t))
 
 ;;; Special throwing function
 
@@ -90,8 +88,8 @@
         (button-pressed-p nil))
     (catch 'tracking-pointer
       (unwind-protect
-        (clim:with-output-recording-options (pane :draw-p t :record-p nil)
-          (clim:tracking-pointer (pane :multiple-window t :context-type nil)
+        (with-output-recording-options (pane :draw t :record nil)
+          (tracking-pointer (pane :multiple-window t :context-type nil)
              (:pointer-motion (window x y)
                (when button-pressed-p
                  (pointer-motion tool window x y)))
@@ -107,7 +105,7 @@
         (reset-tool tool))
         )))
 
-(defmethod clim:read-frame-command ((frame wed-frame) &key stream)
+(defmethod read-frame-command ((frame wed-frame) &key stream)
   (declare (ignore stream))
   (let ((tool (wed-frame-tool frame)))
     (if (not tool)
@@ -118,30 +116,30 @@
         (if reuse-event
           (progn
             (if (consp reuse-event)
-              (clim:unread-gesture (car reuse-event) :stream (cdr reuse-event))
+              (unread-gesture (car reuse-event) :stream (cdr reuse-event))
               (unless (eq reuse-event t)
-                (clim:unread-gesture reuse-event :stream (current-wed-pane frame))))
+                (unread-gesture reuse-event :stream (current-wed-pane frame))))
             (call-next-method))
           (when command
             (values command)))
         ))))
 
-(defmethod clim:execute-frame-command ((frame wed-frame) command)
+(defmethod execute-frame-command ((frame wed-frame) command)
   (declare (ignore command))
   (let ((pane (current-wed-pane frame)))
     (multiple-value-bind (redisplay)
-                         (clim:with-output-recording-options (pane :record-p nil :draw-p t)
+                         (with-output-recording-options (pane :record nil :draw t)
                            (call-next-method))
         (when redisplay
-          (clim:redisplay-frame-pane frame 'wed :force-p t)))
+          (redisplay-frame-pane frame 'wed :force-p t)))
     ))
 
 ;;; Event handlers
 
 (defmethod pointer-button-press ((tool wed-tool) event x y)
   (declare (ignore tool))
-  (let ((wed (wed-frame-wed clim:*application-frame*)))
-    (if (eq (wed:wed-win wed) (clim:event-window event))
+  (let ((wed (wed-frame-wed *application-frame*)))
+    (if (eq (wed:wed-win wed) (event-sheet event))
       (wed:position-set-marker wed x y ed:ed-point)
       (tool-return :reuse-event event))
     ))
@@ -151,39 +149,36 @@
 
 (defmethod pointer-button-release ((tool wed-tool) event x y)
   (declare (ignore tool))
-  (let ((wed (wed-frame-wed clim:*application-frame*)))
-    (when (eq (wed:wed-win wed) (clim:event-window event))
+  (let ((wed (wed-frame-wed *application-frame*)))
+    (when (eq (wed:wed-win wed) (event-sheet event))
       (let ((marker (wed:position-marker wed x y)))
         (unless (ed:marker-= marker (ed:ed-point wed))
           (wed:position-set-marker wed x y ed:ed-mark)))
       )))
 
 (defun make-char (char &rest shifts)
-  #-:allegro
-  (clim-utils::%set-char-bits char (apply #'clim::make-shift-mask shifts))
-  #+:allegro
-  (flet ((make-char-bits (shifts)
-           (+ (if (member :control shifts) cltl1::char-control-bit 0)
-              (if (member :meta    shifts) cltl1::char-meta-bit    0)))
-         )
-    (when (member :shift shifts)
-      (setf char (char-upcase char)))
-    (cltl1::make-char char (make-char-bits shifts)))
-  )
+  (if (member :shift shifts)
+      (char-upcase char)
+      char))
 
 (defun test-char-bits (char &rest shifts)
-  (let ((test-char-bits (apply #'clim::make-shift-mask shifts))
-        (char-bits (clim-utils:char-bits char)))
-    (= char-bits test-char-bits)))
+  t)
 
 (defun shift-char   (char) (make-char char :shift))
 (defun control-char (char) (make-char char :control))
 (defun meta-char    (char) (make-char char :meta))
 
-(defun unmodified-char-p (char) (test-char-bits char))
-(defun shift-char-p      (char) (test-char-bits char :shift))
-(defun control-char-p    (char) (test-char-bits char :control))
-(defun meta-char-p       (char) (test-char-bits char :meta))
+(defun unmodified-char-p (char)
+  (zerop (event-modifier-state char)))
+
+(defun shift-char-p (char)
+  (= 1 (event-modifier-state char)))
+
+(defun control-char-p (char)
+  (= 2 (event-modifier-state char)))
+
+(defun meta-char-p (char)
+  (= 3 (event-modifier-state char)))
 
 ;;; Mapping from character to ed-commands
 
@@ -198,20 +193,21 @@
           ((eql char (meta-char #\l))
            (wed:wed-command wed 'wed:layout))
           (t (multiple-value-bind (ignore error-p)
-                                  (if (and (characterp char) (unmodified-char-p char)
-                                           (not (assoc char ed:*haled-command-alist*))
-                                           (funcall (ed:ed-valid-fun wed) char))
-                                    (ed:ed-command wed 'ed:insert char)
-                                    (ed:ed-command wed char))
+		 (if t
+		     ;; (and (characterp char) (unmodified-char-p char)
+		     ;;      (not (assoc char ed:*haled-command-alist*))
+		     ;;      (funcall (ed:ed-valid-fun wed) char))
+		     (ed:ed-command wed 'ed:insert char)
+		     (ed:ed-command wed char))
                (declare (ignore ignore))
                (when error-p
-                 (clim:beep)))
-             (let ((next-char (clim:read-gesture :stream (wed:wed-win wed) :timeout 0)))
+                 (beep)))
+             (let ((next-char (read-gesture :stream (wed:wed-win wed) :timeout 0)))
                (if (characterp next-char)
                  (standard-process-keyboard wed next-char)
                  (progn
                    (when next-char
-                     (clim:unread-gesture next-char :stream (wed:wed-win wed)))
+                     (unread-gesture next-char :stream (wed:wed-win wed)))
                    (wed:update-wed-layout wed)
                    (wed:refresh-wed wed))))))
     ))
@@ -241,7 +237,7 @@
     (setf (wed-frame-wed frame) wed)
     (activate-wed-frame frame)
     (funcall init-fun wed))
-  (clim:run-frame-top-level frame)
+  (run-frame-top-level frame)
   )
 
 (defun activate-wed-frame-with-stream-fun (stream-fun frame)
